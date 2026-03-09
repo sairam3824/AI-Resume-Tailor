@@ -209,4 +209,4 @@ npm run dev:python
 
 ## 📄 License
 
-[Apache 2.0](LICENSE)
+[MIT](LICENSE)
