@@ -6,8 +6,9 @@ import re
 import io
 import json
 import os
-from typing import Optional
+from typing import Optional, List
 from openai import OpenAI
+from pii import PIIRedactor
 
 app = FastAPI(title="Resume Matcher NLP Service")
 
@@ -26,12 +27,21 @@ try:
     SPACY_AVAILABLE = True
 except Exception:
     SPACY_AVAILABLE = False
+    nlp = None
     print("WARNING: spaCy not available, falling back to regex-only extraction")
+
+# Initialize PII Redactor
+redactor = PIIRedactor(nlp)
 
 
 class TextAnalysisRequest(BaseModel):
     text: str
     jd_text: Optional[str] = None
+    redact_pii: bool = False
+
+class RedactionRequest(BaseModel):
+    text: str
+    placeholder_style: str = "label"  # label, mask, char
 
 
 # ── Profile Extraction ──────────────────────────────────────────────────────
@@ -56,10 +66,16 @@ def extract_profile_info(text: str, nlp_doc=None) -> dict:
             if ent.label_ == "GPE" and not location:
                 location = ent.text
     else:
-        # Regex fallback: Title Case 2-4 word sequence at start
-        name_match = re.search(r'^([A-Z][a-z]+([\s-][A-Z][a-z]+){1,3})', text.strip())
-        if name_match:
-            person_name = name_match.group(1)
+        # Regex fallback: Look for a sequence of 2-4 Title Case words in the first few non-empty lines
+        lines = [line.strip() for line in text.split('\n') if line.strip()]
+        for line in lines[:5]:
+            # Skip common section headers
+            if line.lower() in ["experience", "summary", "education", "skills"]:
+                 continue
+            name_match = re.search(r'^([A-Z][a-z]+(?:[\s-][A-Z][a-z]+){1,3})', line)
+            if name_match:
+                person_name = name_match.group(1)
+                break
 
     return {
         "name": person_name,
@@ -141,11 +157,11 @@ def calculate_rule_based_score(text: str, profile: dict) -> dict:
 
     # 3. Section Structure (20 pts)
     sections = ["experience", "education", "skills", "projects", "summary", "profile", "objective"]
-    found_sections = [s for s in sections if s in text.lower()]
+    found_sections = [s for s in sections if re.search(rf'\b{s}\b', text, re.IGNORECASE)]
     section_score = min(len(found_sections) * 4, 20)
     score += section_score; breakdown["structure"] += section_score
 
-    missing_sections = [s for s in ["experience", "education", "skills"] if s not in text.lower()]
+    missing_sections = [s for s in ["experience", "education", "skills"] if not re.search(rf'\b{s}\b', text, re.IGNORECASE)]
     if missing_sections:
         feedback.append(f"Add missing sections: {', '.join(missing_sections)}")
 
@@ -156,7 +172,7 @@ def calculate_rule_based_score(text: str, profile: dict) -> dict:
         "delivered", "reduced", "increased", "improved", "scaled", "automated",
         "architected", "mentored", "deployed", "migrated", "integrated",
     ]
-    found_verbs = [v for v in action_verbs if v in text.lower()]
+    found_verbs = [v for v in action_verbs if re.search(rf'\b{v}\b', text, re.IGNORECASE)]
     keyword_score = min(len(found_verbs) * 2, 20)
     score += keyword_score; breakdown["keywords"] += keyword_score
 
@@ -166,7 +182,7 @@ def calculate_rule_based_score(text: str, profile: dict) -> dict:
     # 5. Quantifiable Impact (20 pts)
     metrics = re.findall(r'\d+%|\$[\d,]+|\d+x|\d+\s*\+', text)
     impact_words = ["increased", "decreased", "reduced", "improved", "grew", "saved", "generated", "delivered"]
-    found_impact = [w for w in impact_words if w in text.lower()]
+    found_impact = [w for w in impact_words if re.search(rf'\b{w}\b', text, re.IGNORECASE)]
 
     if len(metrics) >= 3 or (len(metrics) > 0 and len(found_impact) > 0):
         score += 20; breakdown["impact"] += 20
@@ -244,8 +260,10 @@ async def analyze_text(body: TextAnalysisRequest):
     text = body.text
     jd_text = body.jd_text or ""
 
-    if not text.strip():
-        raise HTTPException(status_code=400, detail="Text is required")
+    # PII Redaction if requested
+    redacted_text = None
+    if body.redact_pii:
+        redacted_text = redactor.redact(text)
 
     # spaCy NLP
     nlp_doc = nlp(text[:5000]) if SPACY_AVAILABLE else None
@@ -309,7 +327,18 @@ async def analyze_text(body: TextAnalysisRequest):
         "summaryCritique": summary_critique,
         "spaCyAvailable": SPACY_AVAILABLE,
         "aiAvailable": ai is not None,
+        "redactedText": redacted_text,
     }
+
+
+@app.post("/api/redact")
+async def redact_content(body: RedactionRequest):
+    """Specific endpoint for PII redaction (anonymization)."""
+    if not body.text.strip():
+        raise HTTPException(status_code=400, detail="Text is required")
+    
+    redacted = redactor.redact(body.text, placeholder_style=body.placeholder_style)
+    return {"original": body.text, "redacted": redacted}
 
 
 @app.post("/api/parser")
