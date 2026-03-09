@@ -90,14 +90,22 @@ export function matchResumeToJD(
   const missing: string[] = [];
   const partial: string[] = [];
 
+  const escapeRegExp = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
   // Check each JD keyword against resume
   for (const keyword of jdKeywords.allKeywords) {
     const kLower = keyword.toLowerCase();
-    if (resumeLower.includes(kLower)) {
+    const kRegex = new RegExp(`\\b${escapeRegExp(kLower)}\\b`, 'i');
+
+    if (kRegex.test(resumeLower)) {
       matched.push(keyword);
     } else {
       const words = kLower.split(/\s+/);
-      const partialMatch = words.length > 1 && words.some(w => resumeLower.includes(w) && w.length > 3);
+      const partialMatch = words.length > 1 && words.some(w => {
+        const wRegex = new RegExp(`\\b${escapeRegExp(w)}\\b`, 'i');
+        return wRegex.test(resumeLower) && w.length > 3;
+      });
+
       if (partialMatch) {
         partial.push(keyword);
       } else {
