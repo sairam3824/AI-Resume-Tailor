@@ -32,17 +32,23 @@ export interface PythonAnalysis {
   summaryCritique: string;
   spaCyAvailable: boolean;
   aiAvailable: boolean;
+  redactedText?: string | null;
 }
 
 export async function analyzeResumeText(
   text: string,
-  jdText?: string
+  jdText?: string,
+  redactPii: boolean = false
 ): Promise<PythonAnalysis | null> {
   try {
     const res = await fetch(`${PYTHON_URL}/api/analyze-text`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, jd_text: jdText || '' }),
+      body: JSON.stringify({
+        text,
+        jd_text: jdText || '',
+        redact_pii: redactPii
+      }),
       signal: AbortSignal.timeout(30000),
     });
 
@@ -55,6 +61,24 @@ export async function analyzeResumeText(
   } catch (e) {
     // Service not running — graceful fallback
     console.warn('Python NLP service unavailable:', (e as Error).message);
+    return null;
+  }
+}
+
+export async function redactText(
+  text: string,
+  style: 'label' | 'mask' | 'char' = 'label'
+): Promise<string | null> {
+  try {
+    const res = await fetch(`${PYTHON_URL}/api/redact`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, placeholder_style: style }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.redacted;
+  } catch {
     return null;
   }
 }
