@@ -31,12 +31,24 @@ export function extractSections(text: string): { name: string; content: string }
   let currentSection = { name: 'header', content: '' };
 
   for (const line of lines) {
-    const trimmed = line.trim().toLowerCase();
-    const matchedHeader = sectionHeaders.find(h =>
-      trimmed === h || trimmed.startsWith(h + ':') || trimmed.startsWith(h + ' ')
-    );
+    const trimmed = line.trim();
+    if (trimmed.length === 0 || trimmed.length > 50) {
+      currentSection.content += line + '\n';
+      continue;
+    }
 
-    if (matchedHeader && line.trim().length < 50) {
+    const lower = trimmed.toLowerCase();
+    // Match common section names even if they have prefixes/suffixes
+    // e.g., "Professional Experience", "My Skills", "Personal Projects"
+    const matchedHeader = sectionHeaders.find(h => {
+      const regex = new RegExp(`(^|\\s)${h}(\\s|:|$|s)`, 'i');
+      return regex.test(lower);
+    });
+
+    // Check if it looks like a header (short, maybe uppercase, not starting with bullet)
+    const looksLikeHeader = matchedHeader && !/^[-•*]/.test(trimmed);
+
+    if (looksLikeHeader) {
       if (currentSection.content.trim()) {
         sections.push({ ...currentSection });
       }
