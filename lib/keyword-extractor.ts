@@ -59,9 +59,12 @@ export function extractKeywordsFromJD(jdText: string): ExtractedKeywords {
   const requiredSection = extractSection(jdText, ['required', 'requirements', 'must have', 'you will need']);
   const preferredSection = extractSection(jdText, ['preferred', 'nice to have', 'bonus', 'plus', 'desired']);
 
+  const escapeRegExp = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
   for (const skill of TECH_SKILLS) {
     const skillLower = skill.toLowerCase();
-    if (text.includes(skillLower)) {
+    const skillRegex = new RegExp(`\\b${escapeRegExp(skillLower)}\\b`, 'i');
+    if (skillRegex.test(text)) {
       if (requiredSection && requiredSection.toLowerCase().includes(skillLower)) {
         requiredSkills.push(skill);
       } else if (preferredSection && preferredSection.toLowerCase().includes(skillLower)) {
@@ -73,7 +76,8 @@ export function extractKeywordsFromJD(jdText: string): ExtractedKeywords {
   }
 
   for (const skill of SOFT_SKILLS) {
-    if (text.includes(skill.toLowerCase())) {
+    const skillRegex = new RegExp(`\\b${escapeRegExp(skill.toLowerCase())}\\b`, 'i');
+    if (skillRegex.test(text)) {
       requiredSkills.push(skill);
     }
   }
@@ -110,12 +114,16 @@ export function extractKeywordsFromResume(resumeText: string): ResumeKeywords {
   const techSkills: string[] = [];
   const softSkills: string[] = [];
 
+  const escapeRegExp = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
   for (const skill of TECH_SKILLS) {
-    if (text.includes(skill.toLowerCase())) techSkills.push(skill);
+    const skillRegex = new RegExp(`\\b${escapeRegExp(skill.toLowerCase())}\\b`, 'i');
+    if (skillRegex.test(text)) techSkills.push(skill);
   }
 
   for (const skill of SOFT_SKILLS) {
-    if (text.includes(skill.toLowerCase())) softSkills.push(skill);
+    const skillRegex = new RegExp(`\\b${escapeRegExp(skill.toLowerCase())}\\b`, 'i');
+    if (skillRegex.test(text)) softSkills.push(skill);
   }
 
   return {
