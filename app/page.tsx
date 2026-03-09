@@ -17,6 +17,7 @@ export default function HomePage() {
   const [jdUrl, setJDUrl] = useState('');
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState('');
+  const [redactPii, setRedactPii] = useState(false);
 
   const canAnalyze = resumeText.trim().length > 50 && (jdText.trim().length > 50 || jdUrl.trim().length > 10);
 
@@ -34,6 +35,7 @@ export default function HomePage() {
           resumeSections,
           jdText: jdText || undefined,
           jdUrl: jdUrl || undefined,
+          redactPii,
         }),
       });
 
@@ -174,7 +176,21 @@ export default function HomePage() {
         )}
 
         {/* Analyze button */}
-        <div className="flex justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="flex items-center gap-2 bg-white border border-slate-200 px-4 py-2 rounded-full shadow-sm">
+            <input
+              type="checkbox"
+              id="redact-pii"
+              checked={redactPii}
+              onChange={(e) => setRedactPii(e.target.checked)}
+              className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+            />
+            <label htmlFor="redact-pii" className="text-xs font-medium text-slate-600 cursor-pointer select-none">
+              Privacy Mode (Redact name, email, phone from AI)
+            </label>
+            <div className={`ml-1 w-2 h-2 rounded-full ${redactPii ? 'bg-green-500 animate-pulse' : 'bg-slate-300'}`} />
+          </div>
+
           <Button
             onClick={handleAnalyze}
             disabled={!canAnalyze || analyzing}
