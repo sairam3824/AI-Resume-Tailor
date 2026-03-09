@@ -6,7 +6,7 @@ import { analyzeResumeText } from '@/lib/python-client';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { resumeText, resumeSections, jdText, jdUrl } = body;
+    const { resumeText, resumeSections, jdText, jdUrl, redactPii } = body;
 
     if (!resumeText) {
       return NextResponse.json({ error: 'Resume text is required' }, { status: 400 });
@@ -17,8 +17,23 @@ export async function POST(request: NextRequest) {
     if (jdUrl && !jdText) {
       try {
         const scrapeResponse = await fetch(jdUrl, {
-          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ResumeBot/1.0)' },
+          headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
         });
+
+        if (scrapeResponse.status === 403 || scrapeResponse.status === 401) {
+          return NextResponse.json(
+            { error: 'This job site blocked our automated scraper. Please copy and paste the job description text instead.' },
+            { status: 400 }
+          );
+        }
+
+        if (!scrapeResponse.ok) {
+          return NextResponse.json(
+            { error: `Failed to load job URL (Status ${scrapeResponse.status}). Please paste the text directly.` },
+            { status: 400 }
+          );
+        }
+
         const html = await scrapeResponse.text();
         finalJDText = html
           .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
@@ -26,8 +41,16 @@ export async function POST(request: NextRequest) {
           .replace(/<[^>]+>/g, ' ')
           .replace(/\s+/g, ' ')
           .trim();
-      } catch {
-        return NextResponse.json({ error: 'Failed to scrape job description URL' }, { status: 400 });
+
+        if (finalJDText.length < 100) {
+          return NextResponse.json(
+            { error: 'Extracted text is too short. The page might be protected or requires JavaScript. Please paste the JD text instead.' },
+            { status: 400 }
+          );
+        }
+      } catch (err) {
+        console.error('Scrape error:', err);
+        return NextResponse.json({ error: 'Failed to scrape job description URL. Please paste the text instead.' }, { status: 400 });
       }
     }
 
@@ -37,7 +60,7 @@ export async function POST(request: NextRequest) {
 
     // Run Python NLP analysis and TS keyword extraction in parallel
     const [pythonResult, jdKeywords, resumeKeywords] = await Promise.all([
-      analyzeResumeText(resumeText, finalJDText),
+      analyzeResumeText(resumeText, finalJDText, redactPii),
       Promise.resolve(extractKeywordsFromJD(finalJDText)),
       Promise.resolve(extractKeywordsFromResume(resumeText)),
     ]);
@@ -86,26 +109,26 @@ export async function POST(request: NextRequest) {
     // AI insights: from Python service (includes predicted roles, summary critique, missing skills)
     const aiInsights = pythonResult
       ? {
-          predictedRoles: pythonResult.predictedRoles,
-          summaryCritique: pythonResult.summaryCritique,
-          missingSkillsAI: pythonResult.missingSkills,
-          aiFeedback: pythonResult.score.feedback,
-          pythonKeywords: pythonResult.keywords,
-          namedSkills: pythonResult.namedSkills,
-          serviceInfo: {
-            spaCy: pythonResult.spaCyAvailable,
-            ai: pythonResult.aiAvailable,
-          },
-        }
+        predictedRoles: pythonResult.predictedRoles,
+        summaryCritique: pythonResult.summaryCritique,
+        missingSkillsAI: pythonResult.missingSkills,
+        aiFeedback: pythonResult.score.feedback,
+        pythonKeywords: pythonResult.keywords,
+        namedSkills: pythonResult.namedSkills,
+        serviceInfo: {
+          spaCy: pythonResult.spaCyAvailable,
+          ai: pythonResult.aiAvailable,
+        },
+      }
       : {
-          predictedRoles: [],
-          summaryCritique: '',
-          missingSkillsAI: [],
-          aiFeedback: [],
-          pythonKeywords: [],
-          namedSkills: [],
-          serviceInfo: { spaCy: false, ai: false },
-        };
+        predictedRoles: [],
+        summaryCritique: '',
+        missingSkillsAI: [],
+        aiFeedback: [],
+        pythonKeywords: [],
+        namedSkills: [],
+        serviceInfo: { spaCy: false, ai: false },
+      };
 
     return NextResponse.json({
       jdKeywords,
